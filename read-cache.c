@@ -194,7 +194,7 @@ int match_stat_data(const struct stat_data *sd, struct stat *st)
  * cache, ie the parts that aren't tracked by GIT, and only used
  * to validate the cache.
  */
-void fill_stat_cache_info(struct cache_entry *ce, struct stat *st)
+void fill_stat_cache_info(struct index_state *istate, struct cache_entry *ce, struct stat *st)
 {
 	fill_stat_data(&ce->ce_stat_data, st);
 
@@ -203,7 +203,7 @@ void fill_stat_cache_info(struct cache_entry *ce, struct stat *st)
 
 	if (S_ISREG(st->st_mode)) {
 		ce_mark_uptodate(ce);
-		mark_fsmonitor_valid(ce);
+		mark_fsmonitor_valid(istate, ce);
 	}
 }
 
@@ -718,7 +718,7 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 	memcpy(ce->name, path, namelen);
 	ce->ce_namelen = namelen;
 	if (!intent_only)
-		fill_stat_cache_info(ce, st);
+		fill_stat_cache_info(istate, ce, st);
 	else
 		ce->ce_flags |= CE_INTENT_TO_ADD;
 
@@ -1266,7 +1266,7 @@ static int add_index_entry_with_check(struct index_state *istate, struct cache_e
 	 */
 	if (istate->cache_nr > 0 &&
 		strcmp(ce->name, istate->cache[istate->cache_nr - 1]->name) > 0)
-		pos = -istate->cache_nr - 1;
+		pos = -1 - istate->cache_nr;
 	else
 		pos = index_name_stage_pos(istate, ce->name, ce_namelen(ce), ce_stage(ce));
 
@@ -1422,7 +1422,7 @@ static struct cache_entry *refresh_cache_ent(struct index_state *istate,
 			 */
 			if (!S_ISGITLINK(ce->ce_mode)) {
 				ce_mark_uptodate(ce);
-				mark_fsmonitor_valid(ce);
+				mark_fsmonitor_valid(istate, ce);
 			}
 			return ce;
 		}
@@ -1437,7 +1437,7 @@ static struct cache_entry *refresh_cache_ent(struct index_state *istate,
 	updated = make_empty_cache_entry(istate, ce_namelen(ce));
 	copy_cache_entry(updated, ce);
 	memcpy(updated->name, ce->name, ce->ce_namelen + 1);
-	fill_stat_cache_info(updated, &st);
+	fill_stat_cache_info(istate, updated, &st);
 	/*
 	 * If ignore_valid is not set, we should leave CE_VALID bit
 	 * alone.  Otherwise, paths marked with --no-assume-unchanged
@@ -1897,7 +1897,7 @@ static size_t estimate_cache_size(size_t ondisk_size, unsigned int entries)
 	/*
 	 * Account for potential alignment differences.
 	 */
-	per_entry += align_padding_size(sizeof(struct cache_entry), -sizeof(struct ondisk_cache_entry));
+	per_entry += align_padding_size(per_entry, 0);
 	return ondisk_size + entries * per_entry;
 }
 
@@ -2307,6 +2307,7 @@ int discard_index(struct index_state *istate)
 	free_name_hash(istate);
 	cache_tree_free(&(istate->cache_tree));
 	istate->initialized = 0;
+	istate->fsmonitor_has_run_once = 0;
 	FREE_AND_NULL(istate->cache);
 	istate->cache_alloc = 0;
 	discard_split_index(istate);

@@ -1556,7 +1556,9 @@ static int fetch_one(struct remote *remote, int argc, const char **argv, int pru
 
 	sigchain_push_common(unlock_pack_on_signal);
 	atexit(unlock_pack);
+	sigchain_push(SIGPIPE, SIG_IGN);
 	exit_code = do_fetch(gtransport, &rs);
+	sigchain_pop(SIGPIPE);
 	refspec_clear(&rs);
 	transport_disconnect(gtransport);
 	gtransport = NULL;
@@ -1670,7 +1672,7 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 
 	string_list_clear(&list, 0);
 
-	close_all_packs(the_repository->objects);
+	close_object_store(the_repository->objects);
 
 	argv_array_pushl(&argv_gc_auto, "gc", "--auto", NULL);
 	if (verbosity < 0)

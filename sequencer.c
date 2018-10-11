@@ -2136,7 +2136,8 @@ static int parse_insn_line(struct repository *r, struct todo_item *item,
 	item->arg_len = (int)(eol - item->arg);
 
 	if (status < 0)
-		return -1;
+		return error(_("could not parse '%.*s'"),
+			     (int)(end_of_object_name - bol), bol);
 
 	item->commit = lookup_commit_reference(r, &commit_oid);
 	return !item->commit;
@@ -3248,6 +3249,10 @@ static int do_merge(struct repository *r,
 		rollback_lock_file(&lock);
 		ret = fast_forward_to(r, &commit->object.oid,
 				      &head_commit->object.oid, 0, opts);
+		if (flags & TODO_EDIT_MERGE_MSG) {
+			run_commit_flags |= AMEND_MSG;
+			goto fast_forward_edit;
+		}
 		goto leave_merge;
 	}
 
@@ -3351,6 +3356,7 @@ static int do_merge(struct repository *r,
 		 * value (a negative one would indicate that the `merge`
 		 * command needs to be rescheduled).
 		 */
+	fast_forward_edit:
 		ret = !!run_git_commit(r, git_path_merge_msg(r), opts,
 				       run_commit_flags);
 
@@ -3639,7 +3645,6 @@ static int pick_commits(struct repository *r,
 			res = do_exec(r, item->arg);
 			*end_of_arg = saved;
 
-			/* Reread the todo file if it has changed. */
 			if (res) {
 				if (opts->reschedule_failed_exec)
 					reschedule = 1;
@@ -3647,6 +3652,7 @@ static int pick_commits(struct repository *r,
 				res = error_errno(_("could not stat '%s'"),
 						  get_todo_path(opts));
 			else if (match_stat_data(&todo_list->stat, &st)) {
+				/* Reread the todo file if it has changed. */
 				todo_list_release(todo_list);
 				if (read_populate_todo(r, todo_list, opts))
 					res = -1; /* message was printed */
@@ -4883,7 +4889,8 @@ int complete_action(struct repository *r, struct replay_opts *opts, unsigned fla
 	struct object_id oid;
 	struct stat st;
 
-	get_oid(onto, &oid);
+	if (get_oid(onto, &oid) < 0)
+		return error(_("invalid rev: '%s'"), onto);
 	shortonto = find_unique_abbrev(&oid, DEFAULT_ABBREV);
 
 	if (!lstat(todo_file, &st) && st.st_size == 0 &&
